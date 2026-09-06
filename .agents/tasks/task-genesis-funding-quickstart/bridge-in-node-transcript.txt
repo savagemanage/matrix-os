@@ -1,0 +1,141 @@
+Live proof: the burn->unlock watcher running INSIDE matrixd, against a local
+hardhat chain, unlocking on the node's own ledger.
+
+What this adds over the Go tests: the tests drive the wiring with a fake
+EthClient. This run boots the real matrixd binary from a config file, dials a
+real Ethereum JSON-RPC endpoint, decodes a real on-chain Burned event, and
+credits the node's real market ledger, verified through the market gRPC API.
+
+CAVEAT, stated plainly: escrow is seeded by a genesis allocation to
+bridge/escrow, standing in for prior locks. A genesis credit does not increment
+the bridge's locked-total counter, so Bridge.Reconcile is deliberately NOT asserted
+in this run. The full lock -> burn -> unlock -> Reconcile path (with a real
+Bridge.Lock first) is covered by the Go test
+internal/node.TestNodeBridgeWiring_BurnUnlocksOnTheNodeLedger.
+
+-------------------------------------------------------------------------------
+1. Local chain + a real on-chain burn
+-------------------------------------------------------------------------------
+$ npx hardhat node &
+$ npx hardhat run scripts/bridge-burn-emit.ts --network localhost
+BRIDGE_BURN_JSON {"contract":"0x5FbDB2315678afecb367f032d93F642f64180aa3","chainId":31337,"nativeRecipient":"beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef","burnNative":3,"burnBlock":3,"escrowFund":8000000000}
+
+(WrappedMatrix deployed, wMATRIX minted from a REAL Go-produced attestation,
+then burned -- emitting Burned(burner, nativeRecipient, amount) at block 3.)
+
+-------------------------------------------------------------------------------
+2. matrixd config: the new bridge subsystem
+-------------------------------------------------------------------------------
+bridge:
+  contract: "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+  chain_id: 31337
+  watch:
+    enabled: true
+    rpc_url: "http://127.0.0.1:8545"
+    start_block: 0
+    confirmations: 0        # local instant-finality chain only; unset -> 12
+    poll_interval: 1s
+    max_block_span: 2000
+genesis:
+  allocations:
+    - account: "bridge/escrow"
+      amount: 8000000000
+  reward_pool: 1000000000
+
+-------------------------------------------------------------------------------
+3. Boot 1: the in-node watcher observes the burn and unlocks
+-------------------------------------------------------------------------------
+$ ./matrixd --config ./config.yaml
+Genesis applied: 1 named allocation(s), reward pool 1000000000 native base units.
+Inference: registered echo backend for demo provider "demo-inference-provider".
+Bridge: enabled for WrappedMatrix 0x5fbdb2315678afecb367f032d93f642f64180aa3 on chain 31337.
+Bridge watcher: polling http://127.0.0.1:8545 from block 0 (0 confirmations).
+Bridge watcher: unlocked 3 native base units to beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef (burn 0x62b6f3926dedb26a6e1c5425e14966127fc7b6df135bcfe65e2e7d7521b91d4f:1)
+
+Shutting down gracefully...
+
+-------------------------------------------------------------------------------
+4. The unlock landed on the NODE's ledger (read back over the market gRPC API)
+-------------------------------------------------------------------------------
+$ matrix --addr 127.0.0.1:9391 balance --account beef...beef --json
+{
+  "account": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef",
+  "balance": 3
+}
+$ matrix --addr 127.0.0.1:9391 balance --account bridge/escrow --json
+{
+  "account": "bridge/escrow",
+  "balance": 7999999997
+}
+
+Escrow went 8000000000 -> 7999999997: the 3 native base units were RELEASED FROM
+THE NODE'S OWN ESCROW to the burn's named recipient. cmd/bridge-watch cannot
+show this -- it applies burns to a throwaway ledger of its own.
+
+-------------------------------------------------------------------------------
+5. Boot 2 (restart): the persisted cursor resumes instead of re-scanning
+-------------------------------------------------------------------------------
+$ # graceful shutdown, then start the same config again
+$ ./matrixd --config ./config.yaml
+Genesis already applied; skipping (idempotent).
+Inference: registered echo backend for demo provider "demo-inference-provider".
+Bridge: enabled for WrappedMatrix 0x5fbdb2315678afecb367f032d93f642f64180aa3 on chain 31337.
+Bridge watcher: polling http://127.0.0.1:8545 from block 4 (0 confirmations).
+
+"polling ... from block 4" -- NOT from block 0 (start_block). The cursor
+persisted in the node's KV store, so the already-scanned range [0,3] is skipped,
+and boot 2 logs no unlock at all: there is nothing left to re-observe.
+
+Confirmed against the chain's own request log: at this point eth_getLogs had
+been called exactly ONCE across both boots -- boot 1's scan of [0,3]. Boot 2
+issued none, because its cursor (4) was already past head (3), so its polls had
+no final range to request. (After the new burn in section 6 the count rises to
+two, which is that burn being scanned.)
+
+Balances unchanged after the restart -- no double unlock:
+  beef...beef : 3
+  bridge/escrow: 7999999997
+
+-------------------------------------------------------------------------------
+6. The resumed watcher is live, not just resumed: a NEW burn still relays
+-------------------------------------------------------------------------------
+$ CONTRACT=0x5FbDB... npx hardhat run <burn again on the same contract>
+SECOND_BURN {"nativeRecipient":"cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe","burnNative":2,"block":4}
+
+matrixd (still running from boot 2) logged:
+Bridge watcher: unlocked 2000000000 native base units to cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe (burn 0x8bdcb17220f509a83977d32d2cf0e3e901521fd5b7165630c27235a9a78f0055:1)
+
+$ matrix --addr 127.0.0.1:9391 balance --account cafe...cafe --json
+{
+  "account": "cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe",
+  "balance": 2000000000
+}
+$ matrix --addr 127.0.0.1:9391 balance --account bridge/escrow --json
+{
+  "account": "bridge/escrow",
+  "balance": 5999999997
+}
+
+(2 whole wMATRIX burned == 2000000000 native base units at 9 decimals; escrow
+7999999997 -> 5999999997 matches exactly.)
+
+-------------------------------------------------------------------------------
+Summary of what this run proves
+-------------------------------------------------------------------------------
+- matrixd boots the bridge subsystem from config and validates it at startup.
+- The in-node watcher dials a real Ethereum endpoint and decodes a real
+  on-chain Burned event.
+- The unlock is applied to the node's OWN market ledger, released from the
+  node's OWN escrow, and is readable over the node's market API.
+- The scan cursor persists across a matrixd restart: the watcher resumes at the
+  next unscanned block, issues no redundant eth_getLogs, and does not double
+  unlock.
+- A watcher resumed from a persisted cursor keeps relaying new burns.
+
+What this run does NOT prove (unchanged boundaries):
+- Multi-validator consensus on the unlock. The watcher is a per-node relayer;
+  running it inside matrixd does not make the unlock consensus-ordered.
+- Reconcile against real locks (see the CAVEAT at the top; covered by the Go
+  test instead).
+- Anything against a real testnet/mainnet deployment, which needs the
+  operator's funded key.
