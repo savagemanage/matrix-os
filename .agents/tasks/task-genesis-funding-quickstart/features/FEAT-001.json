@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-001",
+  "type": "docs",
+  "description": "Update the root README '## Screenshots' section to embed the NEW multi-page IA product screenshots and fix ALL stale captions to the accurate native-first story. The orchestrator has already captured and committed all PNGs into docs/screenshots/ (web-home, web-token, web-consensus, web-inference, web-docs, web-cli, console-app, plus new web-marketplace, web-console, web-how-it-works). Do NOT re-capture images; only reference already-committed files and write correct captions. Every referenced image path must point at a file that exists in docs/screenshots/.",
+  "status": "completed",
+  "steps": [
+    "Read README.md (## Screenshots section, ~lines 20-50) and docs/screenshots/ file list (console-app.png, web-cli.png, web-consensus.png, web-console.png, web-docs.png, web-home.png, web-how-it-works.png, web-inference.png, web-marketplace.png, web-token.png).",
+    "Rewrite the intro paragraph of ## Screenshots to describe the current multi-page IA and the accurate native-first story: native MATRIX is the coin of the Go consensus L1 (single source of truth for balances, capped at 1,000,000,000 whole MATRIX at 9 decimals); wMATRIX is the bridged ERC-20 mirror for exchange listing (NOT 'the ERC-20 settlement token'); fast leader-based BFT consensus; local + provider-API LLM inference; the matrix CLI; and the Console desktop app.",
+    "In the 'Marketing site (apps/web)' subsection, embed the new product-page screenshots with accurate captions: web-home.png (concise landing that routes to product pages), web-marketplace.png (Compute Marketplace product page: P2P capacity announce/discovery + signed jobs settling in native MATRIX), web-token.png (MATRIX Token page: native coin name/symbol/decimals/max-supply cards + the bridged wrapped ERC-20 mirror panel), web-consensus.png (Consensus page: fast leader-based BFT agreeing one global ledger), web-inference.png (LLM Inference page: local runner + provider-API proxy), web-console.png (Console product page), web-how-it-works.png (How It Works page), web-cli.png (matrix CLI product/reference page), web-docs.png (docs page). Correct the MATRIX caption so it no longer calls it an ERC-20 settlement token.",
+    "Keep the 'Console (apps/console)' subsection with console-app.png and an accurate caption (providers, jobs, native MATRIX wallet, consensus, inference tabs).",
+    "Also fix the 'contracts' bullet in the '## Monorepo layout' section if it inaccurately calls MATRIX 'the ERC-20 settlement and earning token' — reframe to the wrapped/bridged ERC-20 mirror of the native coin, staying accurate.",
+    "Verify every ![...](docs/screenshots/<file>.png) path corresponds to an existing file via ls."
+  ],
+  "acceptance_criteria": [
+    "The README ## Screenshots section embeds web-home, web-marketplace, web-token, web-consensus, web-inference, web-console, web-how-it-works, web-cli, web-docs and console-app, each pointing at an existing file in docs/screenshots/.",
+    "No caption or layout text calls native MATRIX 'the ERC-20 settlement token'; the native-first + wrapped-mirror story is accurate.",
+    "`ls` confirms every referenced docs/screenshots/*.png path exists (no broken image links)."
+  ],
+  "verification": [
+    "grep -o 'docs/screenshots/[a-z-]*\\.png' README.md | sort -u, then confirm each file exists with ls docs/screenshots/",
+    "Manually re-read the ## Screenshots section to confirm captions match the multi-page IA and native-first story"
+  ],
+  "blocked_reason": null,
+  "findings": "Rewrote README.md '## Screenshots' intro to the multi-page IA + accurate native-first story (native MATRIX = coin of the Go consensus L1, single source of truth for balances, capped at 1,000,000,000 whole MATRIX at 9 decimals; wMATRIX = bridged ERC-20 mirror for exchange listing, NOT the settlement token). Marketing-site subsection now embeds all product-page screenshots with accurate captions: web-home, web-marketplace (new), web-token, web-consensus, web-inference, web-console (new), web-how-it-works (new), web-cli, web-docs. Console subsection keeps console-app.png with updated 'native MATRIX wallet + tabs' caption. Fixed the '## Monorepo layout' contracts bullet: MATRIX ERC-20 settlement/earning token -> wMATRIX bridged ERC-20 mirror of the native coin. Verified all 10 referenced docs/screenshots/*.png paths exist via ls (console-app, web-cli, web-consensus, web-console, web-docs, web-home, web-how-it-works, web-inference, web-marketplace, web-token). No new em dashes in authored prose (pre-existing em-dash bullets in Monorepo layout list were left in their existing style). Docs-only change; no build/test run. Did not re-capture images (orchestrator-owned). Committed on main as 9895e0f; not pushed."
+}

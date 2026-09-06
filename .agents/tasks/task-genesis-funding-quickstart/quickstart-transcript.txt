@@ -1,0 +1,85 @@
+FEAT-003 live `matrix quickstart` demonstration (real transcript)
+=================================================================
+Captured by building matrixd + matrix, running `matrixd --init && matrixd` from
+the DEFAULT dev config (only enable_acls flipped to false for a local dev node),
+then running `matrix quickstart` against the live node. This proves the
+copy-paste one-liner genuinely takes a user from zero to a funded account and a
+completed compute job, with native MATRIX actually moving buyer -> provider.
+
+PREREQUISITE FIX VERIFIED: the fresh node now boots directly from the default
+config. internal/node.Initialize writes listen_addr as a full multiaddr
+(/ip4/127.0.0.1/tcp/9000) and internal/p2p now also accepts the plain host:port
+form, so the previous "/ip4/host:port/tcp/0 is invalid" p2p failure is gone.
+
+The quickstart uses the same market RPCs the individual subcommands use:
+FundAccount (FEAT-002), RegisterProvider, SubmitJob, CompleteJob, GetBalance.
+Settlement path exercised: market CompleteJob (direct market.Ledger transfer
+buyer -> provider), the sanctioned single-dev-node path (same as the FEAT-002
+loop).
+
+=== build matrixd + matrix ===
+
+=== matrixd --init (writes default dev config incl. genesis reward pool) ===
+Node initialized successfully
+--- effective config ---
+network:
+  listen_addr: /ip4/127.0.0.1/tcp/9000
+  bootstrap_peers: []
+storage:
+  engine: pebble
+  path: ./data
+security:
+  enable_acls: false
+  allow_unsigned_agents: false
+admin:
+  addr: 0.0.0.0:9090
+market:
+  addr: 0.0.0.0:9091
+consensus:
+  validators: []
+genesis:
+  allocations: []
+  reward_pool: 1000000000000000000
+
+=== start matrixd (background within this single script) ===
+matrixd pid=515
+
+=== node startup log ===
+Genesis applied: 0 named allocation(s), reward pool 1000000000000000000 native base units.
+
+=== matrix health ===
+endpoint: 127.0.0.1:9091
+status:   SERVING
+
+=== matrix quickstart (fresh wallet in this temp home) ===
+1. wallet created at /tmp/tmp.4zfYpQGonG/home/.matrix/wallet.json
+   buyer account: 6cfbb8e08c2513682cd25da05377b548868d5652cd2e7c7b47c1da3b4c56bd8b
+
+2. funded buyer with 1000000 from the reward pool
+   buyer balance: 1000000
+
+3. registered provider "quickstart-provider" (capacity 100, price 5/unit)
+
+4. submitted job 2d9e3b6f-900c-4830-9018-444079882469: 10 units @ 5 = 50 (status pending)
+
+5. completed job 2d9e3b6f-900c-4830-9018-444079882469 (status completed)
+
+done. native MATRIX moved buyer -> provider:
+  buyer    6cfbb8e08c2513682cd25da05377b548868d5652cd2e7c7b47c1da3b4c56bd8b	999950
+  provider quickstart-provider	50
+  job 2d9e3b6f-900c-4830-9018-444079882469 settled for 50
+
+=== independent balance read-back (proves settlement persisted) ===
+buyer account: 6cfbb8e08c2513682cd25da05377b548868d5652cd2e7c7b47c1da3b4c56bd8b
+6cfbb8e08c2513682cd25da05377b548868d5652cd2e7c7b47c1da3b4c56bd8b	999950
+quickstart-provider	50
+native/reward-pool	999999999999000000
+
+=== shut down matrixd ===
+matrixd stopped
+
+Observed balance deltas (native base units, 9 decimals):
+  reward pool : 1000000000000000000 -> 999999999999000000  (funded buyer -1,000,000)
+  buyer       : 0 -> 1,000,000 (funded) -> 999,950 (settled -50 job price)
+  provider    : 0 -> 50 (settled +50)
+Job: 10 units @ price 5/unit = 50; buyer down exactly 50, provider up exactly 50.
